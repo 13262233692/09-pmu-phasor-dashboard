@@ -135,7 +135,7 @@ export const useWebSocket = () => {
               if (statusPayload.alarmCleared) {
                 clearAlarm(statusPayload.alarmCleared as string);
               } else {
-                setSystemStatus(statusPayload as SystemStatus);
+                setSystemStatus(statusPayload as unknown as SystemStatus);
               }
               break;
             }

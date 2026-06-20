@@ -4,8 +4,16 @@ import { config, DEFAULT_STATIONS } from '../config/default';
 export class DataSimulator {
   private frameInterval: NodeJS.Timeout | null = null;
   private callbacks: Array<(data: PhasorData) => void> = [];
-  private stationPhases: Map<string, { phase: number; drift: number; noise: number }> = new Map();
+  private stationPhases: Map<string, {
+    phase: number;
+    drift: number;
+    noise: number;
+    clockOffsetMs: number;
+    clockDriftRate: number;
+    lastFrameCount: number;
+  }> = new Map();
   private startTime: number = Date.now();
+  private globalFrameCount: number = 0;
 
   constructor() {
     DEFAULT_STATIONS.forEach((station, index) => {
@@ -13,6 +21,9 @@ export class DataSimulator {
         phase: (index * 72) % 360,
         drift: (index - 2) * 0.01,
         noise: 0.1 + index * 0.05,
+        clockOffsetMs: (index - 2) * 3,
+        clockDriftRate: (index - 2) * 0.0005,
+        lastFrameCount: 0,
       });
     });
   }
@@ -20,7 +31,7 @@ export class DataSimulator {
   start(): void {
     const interval = 1000 / config.simulation.frameRate;
     this.frameInterval = setInterval(() => this.generateFrame(), interval);
-    console.log('[Simulator] Started with', config.simulation.frameRate, 'fps');
+    console.log('[Simulator] Started with', config.simulation.frameRate, 'fps, per-station clock drift enabled');
   }
 
   stop(): void {
@@ -37,15 +48,23 @@ export class DataSimulator {
   private generateFrame(): void {
     const now = Date.now();
     const elapsed = (now - this.startTime) / 1000;
+    this.globalFrameCount++;
 
-    DEFAULT_STATIONS.forEach((station) => {
+    DEFAULT_STATIONS.forEach((station, idx) => {
       const phaseState = this.stationPhases.get(station.name);
       if (!phaseState) return;
 
-      const baseFrequency = 50 + Math.sin(elapsed * 0.1) * 0.02;
+      phaseState.lastFrameCount++;
+
+      const driftAccumulated = phaseState.clockDriftRate * this.globalFrameCount * 20;
+      const timestamp = Math.round(
+        now + phaseState.clockOffsetMs + driftAccumulated + (Math.random() - 0.5) * 0.5
+      );
+
+      const baseFrequency = 50 + Math.sin(elapsed * 0.1 + idx) * 0.02;
       const freqDeviation = baseFrequency - 50 + (Math.random() - 0.5) * 0.01;
       const frequency = 50 + freqDeviation;
-      const rocof = Math.cos(elapsed * 0.1) * 0.01 + (Math.random() - 0.5) * 0.005;
+      const rocof = Math.cos(elapsed * 0.1 + idx) * 0.01 + (Math.random() - 0.5) * 0.005;
 
       const phaseDrift = Math.sin(elapsed * 0.05 + phaseState.phase * Math.PI / 180) * 2;
       const noise = (Math.random() - 0.5) * phaseState.noise;
@@ -54,8 +73,8 @@ export class DataSimulator {
 
       for (let i = 0; i < 3; i++) {
         const angle = phaseState.phase + phaseDrift + noise + i * 120;
-        const magnitude = 1.0 + Math.sin(elapsed * 0.2 + i) * 0.02 + (Math.random() - 0.5) * 0.01;
-        
+        const magnitude = 1.0 + Math.sin(elapsed * 0.2 + i + idx) * 0.02 + (Math.random() - 0.5) * 0.01;
+
         phasors.push({
           name: `V${'ABC'[i]}`,
           magnitude: magnitude * station.nominalVoltage,
@@ -67,7 +86,7 @@ export class DataSimulator {
       for (let i = 0; i < 3; i++) {
         const angle = phaseState.phase + phaseDrift + noise + i * 120 - 25 + (Math.random() - 0.5) * 2;
         const magnitude = 0.5 + Math.sin(elapsed * 0.3 + i + station.pmuId) * 0.1;
-        
+
         phasors.push({
           name: `I${'ABC'[i]}`,
           magnitude: magnitude * 100,
@@ -78,7 +97,7 @@ export class DataSimulator {
 
       const data: PhasorData = {
         stationId: station.name,
-        timestamp: now,
+        timestamp,
         frequency,
         freqDeviation,
         rocof,
