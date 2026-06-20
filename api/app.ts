@@ -9,6 +9,7 @@ import dotenv from 'dotenv'
 import { fileURLToPath } from 'url'
 import authRoutes from './routes/auth.js'
 import stationRoutes from './routes/stations.js'
+import sandboxRoutes from './routes/sandbox.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -27,6 +28,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
 app.use('/api/auth', authRoutes)
 app.use('/api/stations', stationRoutes)
+app.use('/api/sandbox', sandboxRoutes)
 
 app.get('/api/config/protocol', (req: Request, res: Response) => {
   res.json({

@@ -1,21 +1,41 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { useSandboxIntegration } from '../hooks/useSandboxIntegration';
 import { StatusBar } from '../components/StatusBar';
 import { StationPanel } from '../components/StationPanel';
 import { PhasorPlot } from '../components/PhasorPlot';
 import { FrequencyWave } from '../components/FrequencyWave';
 import { AlarmBar } from '../components/AlarmBar';
+import { TimelineController } from '../components/TimelineController';
+import { DeltaFloatingPanel } from '../components/DeltaFloatingPanel';
 import { useDataStore } from '../store/useDataStore';
+import { useSandboxStore } from '../store/useSandboxStore';
 
 export const Dashboard: React.FC = () => {
   useWebSocket();
-  const { selectedStation } = useDataStore();
+  useSandboxIntegration();
+  const { selectedStation, systemStatus } = useDataStore();
+  const { isSandboxOpen, openSandbox, closeSandbox, events, loadEvents } =
+    useSandboxStore();
+  const [alertPulse, setAlertPulse] = useState(false);
+
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
+
+  useEffect(() => {
+    if (systemStatus.activeAlarms > 0) {
+      setAlertPulse(true);
+      const t = setTimeout(() => setAlertPulse(false), 800);
+      return () => clearTimeout(t);
+    }
+  }, [systemStatus.activeAlarms]);
 
   return (
-    <div className="w-full h-full flex flex-col bg-dark-900 overflow-hidden">
+    <div className="w-full h-full flex flex-col bg-dark-900 overflow-hidden relative">
       <StatusBar />
 
-      <div className="flex-1 flex overflow-hidden p-4 gap-4">
+      <div className="flex-1 flex overflow-hidden p-4 gap-4 relative">
         <div className="w-72 flex-shrink-0">
           <StationPanel />
         </div>
@@ -26,6 +46,30 @@ export const Dashboard: React.FC = () => {
               <div className="corner-tl" />
               <div className="corner-br" />
               <PhasorPlot width={650} height={550} />
+
+              {events.length > 0 && !isSandboxOpen && (
+                <button
+                  onClick={openSandbox}
+                  className={`absolute bottom-4 right-4 z-20 group flex items-center gap-2 px-4 py-2 rounded-lg border backdrop-blur-md transition-all animate-pulse ${
+                    alertPulse
+                      ? 'bg-neon-orange/25 border-neon-orange/60 text-neon-orange shadow-[0_0_30px_#ff6b3550] animate-none'
+                      : 'bg-neon-orange/15 border-neon-orange/40 text-neon-orange hover:bg-neon-orange/25 hover:shadow-[0_0_20px_#ff6b3540]'
+                  }`}
+                >
+                  <span className="text-lg">🎞️</span>
+                  <div className="text-left leading-tight">
+                    <div className="text-sm font-display font-bold tracking-wider">
+                      沙盘推演 · 历史回放
+                    </div>
+                    <div className="text-[10px] font-mono opacity-80">
+                      {events.length} 次孤岛穿越事件
+                    </div>
+                  </div>
+                  <span className="ml-1 text-xs opacity-70 group-hover:opacity-100 transition-opacity">
+                    ▶ 打开
+                  </span>
+                </button>
+              )}
             </div>
 
             <div className="w-80 flex-shrink-0 flex flex-col gap-4">
@@ -84,7 +128,21 @@ export const Dashboard: React.FC = () => {
             <FrequencyWave width={1200} height={260} />
           </div>
         </div>
+
+        <DeltaFloatingPanel onClose={() => useSandboxStore.getState().setShowDeltaPanel(false)} />
       </div>
+
+      {isSandboxOpen && (
+        <div className="h-64 flex-shrink-0 border-t border-neon-cyan/40 shadow-[0_-4px_20px_rgba(0,240,255,0.1)]">
+          <TimelineController onClose={closeSandbox} />
+        </div>
+      )}
+
+      {isSandboxOpen && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 px-4 py-1.5 rounded-full bg-neon-cyan/15 border border-neon-cyan/50 backdrop-blur-md text-neon-cyan text-xs font-display tracking-widest animate-pulse">
+          ◉ 沙盘推演模式 · 历史快照正在回放 · {useSandboxStore.getState().playbackSpeed}x 速度
+        </div>
+      )}
 
       <AlarmBar />
     </div>

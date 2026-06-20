@@ -8,8 +8,10 @@ import { pmuBridge } from './services/pmuBridge';
 import { dataSimulator } from './services/simulator';
 import { frameAligner } from './services/frameAligner';
 import { validateAndCorrectPhasorData, registerStationNominal } from './services/dataValidator';
+import { islandingDetector } from './services/islandingDetector';
+import { sandboxEngine } from './services/sandboxEngine';
 import { config } from './config/default';
-import type { PhasorData, StationConfig } from '../shared/types';
+import type { PhasorData, StationConfig, IslandingEvent } from '../shared/types';
 
 const server = createServer(app);
 initWsServer(server);
@@ -51,12 +53,46 @@ const handleRawData = async (data: PhasorData) => {
   }
 };
 
+islandingDetector.on('islanding-event', (event: IslandingEvent) => {
+  sandboxEngine.registerEvent(event);
+  console.log(
+    `[Islanding] Event ${event.id} registered. Severity=${event.severity}. ` +
+    `Pre/Post window = ${(event.timestamp - event.preWindowStart) / 1000}s / ` +
+    `${(event.postWindowEnd - event.timestamp) / 1000}s`
+  );
+
+  if (wsServer) {
+    wsServer.sendRaw({
+      type: 'alarm',
+      payload: {
+        id: `islanding:${event.id}`,
+        timestamp: event.timestamp,
+        stationId: event.rootStationId,
+        type: 'angle',
+        level: event.severity === 'warning' ? 'warning' : 'critical',
+        message: event.title + ' - ' + event.description,
+        value: event.maxAngleDiff,
+        threshold: 15,
+      },
+      timestamp: Date.now(),
+    });
+
+    wsServer.sendRaw({
+      type: 'status',
+      payload: { islandingEvent: event } as any,
+      timestamp: Date.now(),
+    });
+  }
+});
+
 frameAligner.on('aligned', async (batch: { timestamp: number; frames: PhasorData[] }) => {
   try {
     for (const data of batch.frames) {
       await redisClient.addPhasorData(data);
       await redisClient.setOnlineStation(data.stationId);
       alarmEngine.updateData(data);
+      islandingDetector.ingest(data);
+      sandboxEngine.ingestFrame(data);
     }
 
     if (wsServer) {

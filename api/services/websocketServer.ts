@@ -97,6 +97,10 @@ export class WsServer {
     });
   }
 
+  sendRaw<T>(message: WsMessage<T>): void {
+    this.broadcast<T>(message);
+  }
+
   private broadcast<T>(message: WsMessage<T>): void {
     const json = JSON.stringify(message);
     this.clients.forEach((client) => {
